@@ -12,6 +12,8 @@
 
 /* Maximum size of data chunk that can be sent in a packet */
 #define MAX_FRAME_SIZE 		  	1000
+#define MAX_RECORD_SIZE 		1500
+#define SESSION_SIZE 		  	10000
 
 /* Define packet sizes */
 #define PKT_SIZE_HELLO			7 + 10/* sizeof(uint8_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(char)*16 */ 

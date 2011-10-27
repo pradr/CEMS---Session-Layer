@@ -466,26 +466,6 @@ void *session_transfer(void *ptr) {
 	session_data *s_data;
 	s_data = (session_data *) ptr;
 
-
-        /* Variables to loop through all the files in a folder */
-        DIR *dir;
-        FILE *fp;
-        char file_name[100] = {0}; // To store each file name.
-        char *data; // To store each files data.
-        int file_length = 0; // each file length.
-        struct dirent *ent;
-        int count = 0;// Numbe of files in the folder.
-
-        /* variables to check if we have data for 30 minutes */
-        int timeout = 0;
-        int file_null = 0;
-
-        /* For executing shell commands */
-        char command[100] = {0};
-
-        /* Variable to check if the file was sent properly */
-        int file_sent;
-
         while (1) {
 
                 /* Allocate the session */ 
@@ -507,156 +487,66 @@ void *session_transfer(void *ptr) {
                 session.address.sin_port = htons(session.port);
 
                 log_mesg("SESSION connected to Port %d\n", session.port);
+                printf("SESSION connected to Port %d\n", session.port);
+
+                /* Connection is established. Lets read from the stdin and transfer the data */
+                char session_data[SESSION_SIZE + MAX_RECORD_SIZE] = {0};
+                char *success;
+                int num_bytes = 0;
 
                 while (1) {
 
-                        //sleep(SESSION_SLEEP); // Sleep for 5 mins.
-                        dir = opendir(s_data->host_name);
+                        /* Read the data from standard input. Read SESSION_SIZE bytes and send the data */
+                        while(1) {
+                                printf("Read %d bytes..\n", num_bytes);
+                                  success = fgets(session_data + num_bytes, MAX_RECORD_SIZE, stdin);
 
-                        /* Find the number of files in the current directory */
-                        count = 0;
-                        if (dir != NULL) {
-                                /* Loop all the files and directories within directory */
-                                while ((ent = readdir (dir)) != NULL) {
-                                        if (ent->d_name[0] == '.') {
-                                        } else {
-                                                count ++;
-                                        }
-                                }
-                        }
-                        closedir(dir);
+                                  num_bytes = strlen(session_data);
 
-                        /* No files */
-                        if (count == 0) {
-                                /* Increment this value, if we reach 6, we did not receive file fo the past 30 mins */
-                                timeout += 1;
-                                if (timeout == 6) {
-                                        /* No data for 30 minutes. Send error message */
-
-                                        fp = fopen("ERROR.txt", "r");
-                                        printf("Sending ERROR\n");
-                                                                
-                                        memcpy(session.file_name, "ERROR.txt", sizeof(session.file_name));
-
-                                        if (fp == -1) {
-                                                log_mesg("File Not found \n");
-                                                continue;
-                                        }
-
-                                        fseek(fp, 0, SEEK_END); // seek to end of file
-                                        file_length = ftell(fp); // get current file pointer
-                                        fseek(fp, 0, SEEK_SET); // seek back to beginning of file
-
-                                        data = (char *) malloc(file_length);
-                                        file_length = fread(data, sizeof(char), file_length, fp);
-
-                                        session.no_of_bytes = file_length;
-                                        session.total_no_of_bytes = session.no_of_bytes;
-
-                                        /* Calculate the number of data packets in the session */
-                                        session.no_of_packets = file_length/MAX_FRAME_SIZE;
-
-                                        /* One more packet is required if some more bytes are left */
-                                        if (file_length % MAX_FRAME_SIZE) {
-                                                session.no_of_packets++;
-                                        }
-
-                                        /* Initialize the sequence number for the data packets*/
-                                        session.next_frame_number = 0;
-
-                                        /* Handle session */
-                                        session_handle(&session, data);
-
-                                        fclose(fp);
-                                        free(data);
-                                        timeout = 0;
-                                }
+                                  if (!success) {
+                                          /* Nothing to read. BREAK. */
+                                          printf("No data to read. \n");
+                                          break;
+                                  }
+                                  
+                                  if (num_bytes >= SESSION_SIZE) {
+                                          printf("Session Full ...\n");
+                                          break;
+                                  }
                         }
 
-                        if (count > 0) {
 
-                                /* Okay, we have files. Reset the Timeout counter */
-                                timeout = 0;
+                        /* No data. Lets sleep for sometime */
+                        if (strlen(session_data) == 0 ) {
+                                printf("No data to send. \n");
+                                sleep(10);
+                                continue;
+                        } else {
+                                printf("Sending data ...\n");
 
-                                /* Loop through the directory and send all the files */
-                                dir = opendir (s_data->host_name);
+                                memcpy(session.file_name, "DATA.txt", sizeof(session.file_name));
 
-                                if (dir != NULL) {
-                                        while ((ent = readdir (dir)) != NULL) {
-                                                if (ent->d_name[0] == '.') {
-                                                        /* Skip the hidden files */
-                                                } else {
-                                                        /* BASE */
-                                                        file_sent = 0;
+                                session.no_of_bytes = strlen(session_data);
+                                session.total_no_of_bytes = session.no_of_bytes;
 
-                                                        /* Open the file and read it */
-                                                        sprintf(file_name, "%s/%s", s_data->host_name, ent->d_name);
-                                                        fp = fopen(file_name, "r");
+                                /* Calculate the number of data packets in the session */
+                                session.no_of_packets = session.no_of_bytes/MAX_FRAME_SIZE;
 
-                                                        if (fp == -1) {
-                                                                log_mesg("File Not found \n");
-                                                                continue;
-                                                        }
-
-                                                        log_mesg("Sending File %s\n", file_name);
-
-                                                        /* FInd the length of the file */
-                                                        fseek(fp, 0, SEEK_END); // seek to end of file
-                                                        file_length = ftell(fp); // get current file pointer
-                                                        fseek(fp, 0, SEEK_SET); // seek back to beginning of file
-
-                                           
-                                                        if (file_length > 0) {
-
-                                                                /* Read the data */
-                                                                data = (char *) malloc(file_length);
-                                                                file_length = fread(data, sizeof(char), file_length, fp);
-
-                                                                /* Save the file_properties in the session, so that we can send this
-                                                                 * information in the handshake packet */
-
-                                                                bzero(session.file_name, sizeof(session.file_name));
-                                                                memcpy(session.file_name, ent->d_name, sizeof(session.file_name));
-                                                                session.no_of_bytes = file_length;
-                                                                session.total_no_of_bytes = session.no_of_bytes;
-                                
-                                                                /* Calculate the number of data packets in the session */
-                                                                session.no_of_packets = file_length/MAX_FRAME_SIZE;
-
-                                                                /* One more packet is required if some more bytes are left */
-                                                                if (file_length % MAX_FRAME_SIZE) {
-                                                                        session.no_of_packets++;
-                                                                }
-
-                                                                /* Initialize the sequence number for the data packets*/
-                                                                session.next_frame_number = 0;
-
-                                                                /* Handle session */
-                                                                file_sent = session_handle(&session, data);
-                                                                printf("Back\n");
-                                                                free(data);
-                                                        }
-
-                                                        fclose(fp);
-
-                                                        if (file_sent == -1) {
-                                                                printf("Error sending file\n");
-                                                                exit(0);
-                                                                break;
-                                                        }
-                                                        printf("Sending file %s Over\n", file_name);
-                                                        sprintf(command, "mv -f %s processed/.", file_name);
-                                                        system(command);
-                                                        bzero(file_name, sizeof(file_name));
-                                                   }
-                                        }
-                                        closedir(dir);
+                                /* One more packet is required if some more bytes are left */
+                                if (session.no_of_bytes % MAX_FRAME_SIZE) {
+                                        session.no_of_packets++;
                                 }
-                        }
 
-                        /* Get back to square 1 */
-                        if (file_sent == -1) {
-                                break;
+                                /* Initialize the sequence number for the data packets*/
+                                session.next_frame_number = 0;
+
+                                /* Handle session */
+                                session_handle(&session, session_data);
+                                printf("Send Over... \n");
+                                          
+                                /* Reset the buffer */
+                                bzero(session_data, SESSION_SIZE + MAX_RECORD_SIZE);
+                                num_bytes = 0;
                         }
                 }
         }
