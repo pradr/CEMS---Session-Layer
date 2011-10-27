@@ -1,0 +1,20 @@
+Sender:
+
+make clean
+
+make
+
+<input> | ./sender <host_name> <remote IP>
+
+Eg: cat cool.txt | ./sender host01 127.0.0.1
+
+
+Receiver:
+
+make clean
+
+make
+
+./receiver
+
+Data is stored in the name of the host set by the sender. Eg: host01/DATA.txt
