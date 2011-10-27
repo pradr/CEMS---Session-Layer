@@ -1,3 +1,5 @@
+git clone git@github.com:pique/CEMS---Session-Layer.git
+
 Sender:
 
 make clean
